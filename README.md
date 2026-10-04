@@ -2,6 +2,10 @@
 
 A [Claude Code mod](https://claude.dev/blog/getting-started-with-claude-code-mods/) that puts a little Clawd and a usage "weather forecast" above your prompt:
 
+![Clawd hopping above the prompt in Claude Desktop, next to the context weather and 5-hour / weekly usage](assets/demo.gif)
+
+In the terminal:
+
 ```
  ▐▛███▜▌
 ▝▜█████▛▘   ☀ Clear Context 5% 50K/1.0M  │  5h ▰▱▱▱▱ 24% 3h17m  │  Weekly ▱▱▱▱▱ 4% 6d21h
