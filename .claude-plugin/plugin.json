@@ -1,0 +1,7 @@
+{
+  "name": "usage-weather",
+  "version": "0.1.0",
+  "description": "A hopping Clawd plus a weather forecast for your context window and 5-hour / weekly plan usage, above the prompt",
+  "author": { "name": "LeiZiKang" },
+  "types": "./types/index.d.ts"
+}
