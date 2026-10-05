@@ -6,6 +6,8 @@ import type { Snapshot } from '../types'
 const snapshot = atom({ plugin: 'usage-weather', key: 'snapshot' } as const, null)
 const clockNow = atom({ plugin: 'usage-weather', key: 'now' } as const, 0)
 const frame = atom({ plugin: 'usage-weather', key: 'frame' } as const, 0)
+// per session: /weather off hides the band in this session only
+const isHidden = atom({ plugin: 'usage-weather', key: 'isHidden' } as const, false)
 
 // Clawd, as Claude Code's welcome screen draws it, in four rows so it can hop
 const CLAWD_ORANGE = '#D97757'
@@ -104,6 +106,10 @@ function toSnapshot(u: { context: { percent?: number; tokens?: number; window: n
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    await $.command.register({
+      name: 'weather',
+      description: 'Show or hide the usage weather band in this session: /weather on | off',
+    })
     const s = toSnapshot(await $.session.usage())
     await update($, snapshot, () => s)
     const t = await $.clock.now()
@@ -118,6 +124,13 @@ export const register: Register = on => {
     return result
   })
 
+  on('command.run', { command: 'weather' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    const hide = arg === 'off' ? true : arg === 'on' ? false : !(await read($, isHidden))
+    await update($, isHidden, () => hide)
+    return { text: hide ? 'Usage weather hidden in this session. /weather on brings it back.' : 'Usage weather shown.' }
+  })
+
   on('session.measure', async ($, e, next) => {
     const s = toSnapshot(e)
     await update($, snapshot, () => s)
@@ -126,7 +139,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const s = await read($, snapshot)
-    if (e.props.hasSurvey || s === null) return next(e)
+    if (e.props.hasSurvey || s === null || (await read($, isHidden))) return next(e)
 
     const ui = $.ui.resolve(e)
     const { Box, Text } = ui

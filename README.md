@@ -35,7 +35,17 @@ Then load it in one of these ways:
   ```
   then start a new session (in Desktop, quit with ⌘Q and reopen; sessions only read this at start).
 
+- **One project only:** put the mod in that project's `.claude/skills/` folder instead. Claude Code auto-loads a plugin it finds there for sessions in that project:
+  ```bash
+  git clone https://github.com/LeiZiKang/clawd-usage-weather your-project/.claude/skills/usage-weather
+  ```
+  Don't combine this with `CLAUDE_CODE_PLUGIN_DIRS`, or that project gets two bands.
+
 Check it with `claude plugin validate ~/.claude/mods/usage-weather`.
+
+### Turning it off in one session
+
+The band is on by default. In any session, `/weather off` hides it and `/weather on` brings it back (`/weather` alone toggles). Only that session changes.
 
 ## How it works
 
