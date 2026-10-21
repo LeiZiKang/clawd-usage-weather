@@ -7,6 +7,8 @@ const snapshot = atom({ plugin: 'usage-weather', key: 'snapshot' } as const, nul
 const clockNow = atom({ plugin: 'usage-weather', key: 'now' } as const, 0)
 const frame = atom({ plugin: 'usage-weather', key: 'frame' } as const, 0)
 // per session: /weather off hides the band in this session only
+// pirate look is the default; /weather classic switches back
+const isClassic = atom({ plugin: 'usage-weather', key: 'isClassic' } as const, false)
 const isHidden = atom({ plugin: 'usage-weather', key: 'isHidden' } as const, false)
 
 // Clawd, as Claude Code's welcome screen draws it, in four rows so it can hop
@@ -43,18 +45,40 @@ const sweatDrop = (x: number, delay: number) =>
   `<animate attributeName="opacity" values="0;1;0" dur="0.9s" begin="${delay}s" repeatCount="indefinite"/>` +
   `</path>`
 
-const clawdSvg = (mood: 'idle' | 'working' | 'panic') => {
+// Pirate kit, drawn in the body's own grid (18 × 5 pixels, each 1.6 units tall)
+const PIRATE_HAT =
+  `<polygon points="4.5,-1.2 5.5,-4 12.5,-4 13.5,-1.2" fill="#3b2a24" stroke="#c9a227" stroke-width="0.25"/>` +
+  `<path d="M1 -0.4 Q9 -2.6 17 -0.4 L17 0.2 Q9 -1.6 1 0.2 Z" fill="#3b2a24" stroke="#c9a227" stroke-width="0.25" shape-rendering="geometricPrecision"/>` +
+  `<rect x="8.3" y="-3.4" width="1.4" height="1.1" fill="#f2efe6"/>` +
+  `<rect x="8.1" y="-2.3" width="0.6" height="0.4" fill="#f2efe6"/><rect x="9.3" y="-2.3" width="0.6" height="0.4" fill="#f2efe6"/>`
+const EYE_PATCH =
+  `<rect x="3" y="0.9" width="9" height="0.3" fill="#1b1b1f"/>` +
+  `<rect x="11.4" y="1.3" width="2.4" height="2.2" rx="0.5" fill="#1b1b1f"/>`
+// cutlass in the right claw; it swings while Claude works
+const cutlass = (swing: boolean) =>
+  `<g shape-rendering="geometricPrecision">` +
+  (swing
+    ? `<animateTransform attributeName="transform" type="rotate" values="0 17.6 4.4;-35 17.6 4.4;0 17.6 4.4" dur="0.55s" repeatCount="indefinite"/>`
+    : '') +
+  `<path d="M17.9 3.6 Q20.5 1 21.8 -2.6 Q22.4 -1 20.2 2.3 L18.5 4.1 Z" fill="#d8dde3"/>` +
+  `<path d="M18.2 3.7 Q20.6 1.1 21.8 -2.6" stroke="#9aa3ad" stroke-width="0.2" fill="none"/>` +
+  `<rect x="16.6" y="3.4" width="3" height="0.6" rx="0.3" fill="#c9a227" transform="rotate(-40 18.1 3.7)"/>` +
+  `<rect x="17" y="4" width="0.8" height="1.4" fill="#6b4226"/>` +
+  `</g>`
+
+const clawdSvg = (mood: 'idle' | 'working' | 'panic', isPirate: boolean) => {
   const color = mood === 'panic' ? PANIC_RED : CLAWD_ORANGE
   const motion =
     mood === 'panic'
-      ? `<animateTransform attributeName="transform" type="translate" values="1 3;1.5 3;0.5 3;1 3" dur="0.18s" repeatCount="indefinite"/>`
+      ? `<animateTransform attributeName="transform" type="translate" values="1 4;1.5 4;0.5 4;1 4" dur="0.18s" repeatCount="indefinite"/>`
       : mood === 'working'
-        ? `<animateTransform attributeName="transform" type="translate" values="1 3;1 0.5;1 3" keyTimes="0;0.45;1" dur="0.55s" calcMode="spline" keySplines="0.2 0.7 0.4 1;0.6 0 0.8 0.3" repeatCount="indefinite"/>`
-        : `<animateTransform attributeName="transform" type="translate" values="1 3;1 3;1 0.8;1 3" keyTimes="0;0.82;0.9;1" dur="3.2s" repeatCount="indefinite"/>`
-  const sweat = mood === 'panic' ? `<g>${sweatDrop(19.5, 0)}${sweatDrop(20.8, 0.45)}</g>` : ''
+        ? `<animateTransform attributeName="transform" type="translate" values="1 4;1 1.5;1 4" keyTimes="0;0.45;1" dur="0.55s" calcMode="spline" keySplines="0.2 0.7 0.4 1;0.6 0 0.8 0.3" repeatCount="indefinite"/>`
+        : `<animateTransform attributeName="transform" type="translate" values="1 4;1 4;1 1.8;1 4" keyTimes="0;0.82;0.9;1" dur="3.2s" repeatCount="indefinite"/>`
+  const sweat = mood === 'panic' ? `<g>${sweatDrop(0.2, 0)}${sweatDrop(-0.8, 0.45)}</g>` : ''
+  const kit = isPirate ? `${EYE_PATCH}${PIRATE_HAT}${cutlass(mood === 'working')}` : ''
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 11.5" shape-rendering="crispEdges" style="background:transparent">` +
-    `<g transform="translate(1 3)">${motion}${clawdBody(color)}</g>${sweat}</svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -3 27 15.5" shape-rendering="crispEdges" style="background:transparent">` +
+    `<g transform="translate(1 4)">${motion}${clawdBody(color)}${kit}</g>${sweat}</svg>`
   )
 }
 
@@ -108,7 +132,7 @@ export const register: Register = on => {
     const result = await next(e)
     await $.command.register({
       name: 'weather',
-      description: 'Show or hide the usage weather band in this session: /weather on | off',
+      description: 'Usage weather band in this session: /weather on | off | pirate | classic',
     })
     const s = toSnapshot(await $.session.usage())
     await update($, snapshot, () => s)
@@ -126,6 +150,10 @@ export const register: Register = on => {
 
   on('command.run', { command: 'weather' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    if (arg === 'pirate' || arg === 'classic') {
+      await update($, isClassic, () => arg === 'classic')
+      return { text: arg === 'pirate' ? 'Arr! Clawd is a pirate now. 🏴‍☠️' : 'Clawd is back to classic.' }
+    }
     const hide = arg === 'off' ? true : arg === 'on' ? false : !(await read($, isHidden))
     await update($, isHidden, () => hide)
     return { text: hide ? 'Usage weather hidden in this session. /weather on brings it back.' : 'Usage weather shown.' }
@@ -157,7 +185,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="row" alignItems="center">
         {Svg ? (
-          <Svg source={clawdSvg(mood)} alt="Clawd" width={66} height={35} />
+          <Svg source={clawdSvg(mood, !(await read($, isClassic)))} alt="Clawd" width={80} height={46} />
         ) : (
           <Box flexDirection="column">
             {crab.map((row, i) => (

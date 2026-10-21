@@ -43,6 +43,12 @@ Then load it in one of these ways:
 
 Check it with `claude plugin validate ~/.claude/mods/usage-weather`.
 
+### Pirate mode 🏴‍☠️
+
+Clawd wears a tricorn hat and an eye patch and carries a cutlass by default; the cutlass swings while Claude works. `/weather classic` brings back plain Clawd for that session, `/weather pirate` puts the costume back on. (Desktop only; the terminal crab stays classic.)
+
+![Pirate Clawd](assets/pirate.png)
+
 ### Turning it off in one session
 
 The band is on by default. In any session, `/weather off` hides it and `/weather on` brings it back (`/weather` alone toggles). Only that session changes.
