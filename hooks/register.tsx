@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import type { Snapshot } from '../types'
+import type { Sample, Snapshot, Spend } from '../types'
 
 const snapshot = atom({ plugin: 'usage-weather', key: 'snapshot' } as const, null)
 const clockNow = atom({ plugin: 'usage-weather', key: 'now' } as const, 0)
@@ -9,6 +9,40 @@ const frame = atom({ plugin: 'usage-weather', key: 'frame' } as const, 0)
 // per session: /weather off hides the band in this session only
 // pirate look is the default; /weather classic switches back
 const isClassic = atom({ plugin: 'usage-weather', key: 'isClassic' } as const, false)
+const samples = atom({ plugin: 'usage-weather', key: 'samples' } as const, [])
+const spend = atom({ plugin: 'usage-weather', key: 'spend' } as const, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, turns: 0 })
+const slices = atom({ plugin: 'usage-weather', key: 'slices' } as const, [])
+const PANE = 'usage-weather-top'
+
+// Burn rate: how fast the 5-hour window fills, over the last 30 minutes of readings.
+// 20%/h empties the window exactly at reset, so that is "1× pace".
+const PACE = 20
+const burnRate = (list: Sample[], now: number) => {
+  const recent = list.filter(x => now - x.t <= 30 * 60_000)
+  if (recent.length < 2) return null
+  const a = recent[0]!, b = recent[recent.length - 1]!
+  const hours = (b.t - a.t) / 3_600_000
+  return hours < 1 / 60 ? null : Math.max(0, (b.pct - a.pct) / hours)
+}
+
+// speedometer: a 180° arc green → yellow → red, needle at rate / (2 × pace)
+const gaugeSvg = (rate: number | null) => {
+  const f = rate === null ? 0 : Math.min(1, rate / (2 * PACE))
+  const ang = Math.PI * (1 - f)
+  const nx = 12 + 9 * Math.cos(ang), ny = 12 - 9 * Math.sin(ang)
+  const arc = (from: number, to: number, c: string) => {
+    const p = (t: number) => `${12 + 10 * Math.cos(Math.PI * (1 - t))} ${12 - 10 * Math.sin(Math.PI * (1 - t))}`
+    return `<path d="M${p(from)} A10 10 0 0 1 ${p(to)}" stroke="${c}" stroke-width="2.6" fill="none"/>`
+  }
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 14" style="background:transparent">` +
+    arc(0, 0.5, '#4cd17a') + arc(0.5, 0.75, '#f5c542') + arc(0.75, 1, '#ff5c5c') +
+    `<line x1="12" y1="12" x2="${nx}" y2="${ny}" stroke="${rate === null ? '#777' : '#f2efe6'}" stroke-width="1.1" stroke-linecap="round"/>` +
+    `<circle cx="12" cy="12" r="1.4" fill="#f2efe6"/></svg>`
+  )
+}
+const fmtRate = (rate: number | null) => (rate === null ? '—' : `${(rate / PACE).toFixed(1)}× pace`)
+
 const isHidden = atom({ plugin: 'usage-weather', key: 'isHidden' } as const, false)
 
 // Clawd, as Claude Code's welcome screen draws it, in four rows so it can hop
@@ -132,7 +166,7 @@ export const register: Register = on => {
     const result = await next(e)
     await $.command.register({
       name: 'weather',
-      description: 'Usage weather band in this session: /weather on | off | pirate | classic',
+      description: 'Usage weather band in this session: /weather on | off | top | pirate | classic',
     })
     const s = toSnapshot(await $.session.usage())
     await update($, snapshot, () => s)
@@ -150,6 +184,16 @@ export const register: Register = on => {
 
   on('command.run', { command: 'weather' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    if (arg === 'top') {
+      const u = await $.session.usage({ breakdown: 'summary' })
+      const cats = (u.context.breakdown?.categories ?? [])
+        .filter(c => c.tokens > 0 && c.name !== 'Free space' && c.name !== 'Autocompact buffer')
+        .map(c => ({ name: c.name, tokens: c.tokens }))
+        .sort((a, b) => b.tokens - a.tokens)
+      await update($, slices, () => cats)
+      await $.ui.open({ id: PANE, title: 'Token usage' })
+      return { text: 'Opened the token usage pane.' }
+    }
     if (arg === 'pirate' || arg === 'classic') {
       await update($, isClassic, () => arg === 'classic')
       return { text: arg === 'pirate' ? 'Arr! Clawd is a pirate now. 🏴‍☠️' : 'Clawd is back to classic.' }
@@ -159,9 +203,69 @@ export const register: Register = on => {
     return { text: hide ? 'Usage weather hidden in this session. /weather on brings it back.' : 'Usage weather shown.' }
   })
 
+  on('turn.complete', async ($, e, next) => {
+    const u = e.usage
+    if (u) {
+      await update($, spend, x => ({
+        input: x.input + u.input_tokens,
+        output: x.output + u.output_tokens,
+        cacheRead: x.cacheRead + (u.cache_read_input_tokens ?? 0),
+        cacheWrite: x.cacheWrite + (u.cache_creation_input_tokens ?? 0),
+        turns: x.turns + 1,
+      }))
+    }
+    return next(e)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const list = await read($, slices)
+    const sp = await read($, spend)
+    const rate = burnRate(await read($, samples), await $.clock.now())
+    const width = Math.max(10, Math.min(30, (e.props.bodyColumns ?? 60) - 30))
+    const bars = (rows: { name: string; tokens: number }[], color: string) => {
+      const top = Math.max(1, ...rows.map(r => r.tokens))
+      return rows.map(r => (
+        <Text key={r.name}>
+          <Text>{r.name.padEnd(22).slice(0, 22)} </Text>
+          <Text color={color}>{'█'.repeat(Math.max(1, Math.round((r.tokens / top) * width)))}</Text>
+          <Text dimColor> {fmtTokens(r.tokens)}</Text>
+        </Text>
+      ))
+    }
+    const spent = [
+      { name: 'Cache read', tokens: sp.cacheRead },
+      { name: 'Cache write', tokens: sp.cacheWrite },
+      { name: 'Output', tokens: sp.output },
+      { name: 'Input (uncached)', tokens: sp.input },
+    ].sort((a, b) => b.tokens - a.tokens)
+    return (
+      <Box flexDirection="column">
+        <Text bold>Burn rate: {fmtRate(rate)}</Text>
+        <Text dimColor>1× = 5h window lasts exactly until reset</Text>
+        <Text> </Text>
+        <Text bold>What fills the context now</Text>
+        {list.length === 0 ? <Text dimColor>Measuring…</Text> : bars(list.slice(0, 8), CLAWD_ORANGE)}
+        <Text> </Text>
+        <Text bold>Tokens spent this session ({sp.turns} turns)</Text>
+        {bars(spent, '#4fa3ff')}
+      </Box>
+    )
+  })
+
   on('session.measure', async ($, e, next) => {
     const s = toSnapshot(e)
     await update($, snapshot, () => s)
+    const five = e.rateLimits.find(r => r.kind === 'five_hour')
+    if (five) {
+      const t = await $.clock.now()
+      // a reset drops the percentage: start the history over
+      await update($, samples, list => {
+        const kept = list.filter(x => t - x.t <= 60 * 60_000)
+        const last = kept[kept.length - 1]
+        return [...(last && five.percentUsed < last.pct ? [] : kept), { t, pct: five.percentUsed }]
+      })
+    }
     return next(e)
   })
 
@@ -175,7 +279,8 @@ export const register: Register = on => {
     const p = s.percent ?? 0
     const w = weather(p)
     const isPanicking = p >= PANIC_AT
-    const Svg = e.surface === 'terminal' ? undefined : (ui as { Svg?: (props: { source: string; alt: string; width?: number; height?: number; isInteractive?: boolean }) => unknown }).Svg
+    const rate = burnRate(await read($, samples), now)
+    const Svg = e.surface === 'terminal' ? undefined : ('Svg' in ui ? ui.Svg : undefined)
     // only the terminal's text crab reads the frame tick, so the SVG is not redrawn every 350ms
     const tick = Svg ? 0 : await read($, frame)
     const crab = isPanicking ? tremble(tick) : pose(tick, e.props.isWorking)
@@ -189,14 +294,14 @@ export const register: Register = on => {
         ) : (
           <Box flexDirection="column">
             {crab.map((row, i) => (
-              <Text key={i} color={isPanicking ? PANIC_RED : CLAWD_ORANGE}>{row}</Text>
+              <Text key={String(i)} color={isPanicking ? PANIC_RED : CLAWD_ORANGE}>{row}</Text>
             ))}
           </Box>
         )}
         {!Svg && drops && (
           <Box flexDirection="column">
             {drops.map((d, i) => (
-              <Text key={i} color={SWEAT_BLUE}>{d}</Text>
+              <Text key={String(i)} color={SWEAT_BLUE}>{d}</Text>
             ))}
           </Box>
         )}
@@ -212,6 +317,9 @@ export const register: Register = on => {
             <Text dimColor> {fmtTokens(s.tokens)}/{fmtTokens(s.window)}</Text>
           </Text>
         )}
+        <Text dimColor>{'  │  '}</Text>
+        {Svg ? <Svg source={gaugeSvg(rate)} alt={`Burn rate ${fmtRate(rate)}`} width={34} height={20} /> : <Text dimColor>⏱ </Text>}
+        <Text color={rate === null ? undefined : level((rate / (2 * PACE)) * 100)}> {fmtRate(rate)}</Text>
         {s.limits.map(l => (
           <Text key={l.kind}>
             <Text dimColor>{'  │  '}{LABELS[l.kind] ?? l.kind} </Text>

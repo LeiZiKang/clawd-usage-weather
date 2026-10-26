@@ -43,6 +43,14 @@ Then load it in one of these ways:
 
 Check it with `claude plugin validate ~/.claude/mods/usage-weather`.
 
+### Burn-rate speedometer and `/weather top`
+
+A small speedometer in the band shows how fast you're burning the 5-hour window, measured over the last 30 minutes. **1× pace** means the window runs out exactly at reset; the needle is in the red past 1.5×. It needs two readings a few minutes apart, so it shows `—` at first.
+
+![Speedometer at 0.3×, 1× and 1.7× pace](assets/gauge.png)
+
+`/weather top` opens a **Token usage** pane: what fills the context right now (system prompt, tools, MCP tools, messages…, largest first) and the tokens this session has spent by kind (cache read / cache write / output / uncached input).
+
 ### Pirate mode 🏴‍☠️
 
 Clawd wears a tricorn hat and an eye patch and carries a cutlass by default; the cutlass swings while Claude works. `/weather classic` brings back plain Clawd for that session, `/weather pirate` puts the costume back on. (Desktop only; the terminal crab stays classic.)
