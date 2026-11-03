@@ -6,6 +6,6 @@ export type Snapshot = { percent?: number; tokens?: number; window: number; limi
 
 declare module 'claude-code' {
   interface PluginState {
-    'usage-weather': { snapshot: Snapshot | null; now: number; frame: number; isHidden: boolean; isClassic: boolean; avatar: 'clawd' | 'bunny'; samples: Sample[]; spend: Spend; slices: Slice[] }
+    'usage-weather': { snapshot: Snapshot | null; now: number; frame: number; isHidden: boolean; isClassic: boolean; avatar: 'clawd' | 'bunny' | 'photo'; petImage: string; samples: Sample[]; spend: Spend; slices: Slice[] }
   }
 }

@@ -45,6 +45,8 @@ const fmtRate = (rate: number | null) => (rate === null ? '—' : `${(rate / PAC
 
 // which pet: /weather bunny | clawd, remembered across sessions in $.store
 const avatar = atom({ plugin: 'usage-weather', key: 'avatar' } as const, 'clawd')
+// your own pet: a cut-out PNG on your disk (/weather photo <path>), kept as base64
+const petImage = atom({ plugin: 'usage-weather', key: 'petImage' } as const, '')
 const isHidden = atom({ plugin: 'usage-weather', key: 'isHidden' } as const, false)
 
 // Clawd, as Claude Code's welcome screen draws it, in four rows so it can hop
@@ -161,6 +163,24 @@ const bunnySvg = (mood: 'idle' | 'working' | 'panic') => {
   )
 }
 
+// the pet photo hops like Clawd; in a panic it flushes red and sweats
+const photoSvg = (mood: 'idle' | 'working' | 'panic', base64: string) => {
+  const motion =
+    mood === 'panic'
+      ? `<animateTransform attributeName="transform" type="translate" values="4 10;6 10;2 10;4 10" dur="0.18s" repeatCount="indefinite"/>`
+      : mood === 'working'
+        ? `<animateTransform attributeName="transform" type="translate" values="4 10;4 1;4 10" keyTimes="0;0.45;1" dur="0.55s" calcMode="spline" keySplines="0.2 0.7 0.4 1;0.6 0 0.8 0.3" repeatCount="indefinite"/>`
+        : `<animateTransform attributeName="transform" type="translate" values="4 10;4 10;4 2;4 10" keyTimes="0;0.82;0.9;1" dur="3.2s" repeatCount="indefinite"/>`
+  const flush = mood === 'panic'
+    ? `<filter id="flush"><feColorMatrix type="matrix" values="1 0 0 0 0  0 0.6 0 0 0  0 0 0.6 0 0  0 0 0 1 0"/></filter>`
+    : ''
+  const sweat = mood === 'panic' ? `<g transform="scale(5)">${sweatDrop(1, 0)}${sweatDrop(0.2, 0.45)}</g>` : ''
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 114 132" style="background:transparent">${flush}` +
+    `<g transform="translate(4 10)">${motion}<image href="data:image/png;base64,${base64}" width="106" height="120"${mood === 'panic' ? ' filter="url(#flush)"' : ''}/></g>${sweat}</svg>`
+  )
+}
+
 const tremble = (tick: number) => GROUND.map(row => (tick % 2 === 0 ? ` ${row}` : `${row} `))
 const sweat = (tick: number) => {
   const drops = [' ', ' ', ' ', ' ']
@@ -210,10 +230,19 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const saved = await $.store.get('avatar')
-    if (saved === 'bunny' || saved === 'clawd') await update($, avatar, () => saved)
+    if (saved === 'bunny' || saved === 'clawd' || saved === 'photo') await update($, avatar, () => saved)
+    const petPath = await $.store.get('petPath')
+    if (typeof petPath === 'string') {
+      try {
+        const { base64 } = (await $.fs.read(petPath, { as: 'bytes' })) as { base64: string }
+        await update($, petImage, () => base64)
+      } catch {
+        // the file moved: fall back to Clawd until /weather photo is run again
+      }
+    }
     await $.command.register({
       name: 'weather',
-      description: 'Usage weather band in this session: /weather on | off | top | bunny | clawd | pirate | classic',
+      description: 'Usage weather band in this session: /weather on | off | top | photo <png> | bunny | clawd | pirate | classic',
     })
     const s = toSnapshot(await $.session.usage())
     await update($, snapshot, () => s)
@@ -231,6 +260,23 @@ export const register: Register = on => {
 
   on('command.run', { command: 'weather' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    if (arg.startsWith('photo')) {
+      const path = e.args.trim().slice('photo'.length).trim()
+      if (path) {
+        try {
+          const { base64 } = (await $.fs.read(path, { as: 'bytes' })) as { base64: string }
+          await update($, petImage, () => base64)
+          await $.store.set('petPath', path)
+        } catch {
+          return { text: `Could not read ${path}. Give the absolute path of a PNG with a transparent background.` }
+        }
+      } else if (!(await read($, petImage))) {
+        return { text: 'Usage: /weather photo /absolute/path/to/pet.png (a small PNG cut-out, about 120px tall)' }
+      }
+      await update($, avatar, () => 'photo')
+      await $.store.set('avatar', 'photo')
+      return { text: '🐾 Your pet is here (every session from now on).' }
+    }
     if (arg === 'bunny' || arg === 'clawd') {
       await update($, avatar, () => arg)
       await $.store.set('avatar', arg)
@@ -342,7 +388,9 @@ export const register: Register = on => {
     return (
       <Box flexDirection="row" alignItems="center">
         {Svg ? (
-          (await read($, avatar)) === 'bunny' ? (
+          (await read($, avatar)) === 'photo' && (await read($, petImage)) ? (
+          <Svg source={photoSvg(mood, await read($, petImage))} alt="Pet" width={40} height={46} />
+        ) : (await read($, avatar)) === 'bunny' ? (
           <Svg source={bunnySvg(mood)} alt="Bunny" width={44} height={46} />
         ) : (
           <Svg source={clawdSvg(mood, !(await read($, isClassic)))} alt="Clawd" width={80} height={46} />

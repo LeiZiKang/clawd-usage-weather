@@ -57,6 +57,16 @@ A small speedometer in the band shows how fast you're burning the 5-hour window,
 
 ![Pixel bunny](assets/bunny.png)
 
+### Your own pet 🐾
+
+Cut your pet out of a photo (on macOS: open it in Preview or Photos and use *Remove Background*, or long-press the subject in Photos and copy it), save it as a PNG about 120px tall, then run:
+
+```
+/weather photo /absolute/path/to/pet.png
+```
+
+Your pet hops above the prompt instead of Clawd, flushes red and sweats when the context is nearly full, and is remembered across sessions. The photo stays on your disk; it is read when a session starts. Desktop only.
+
 ### Pirate mode 🏴‍☠️
 
 Clawd wears a tricorn hat and an eye patch and carries a cutlass by default; the cutlass swings while Claude works. `/weather classic` brings back plain Clawd for that session, `/weather pirate` puts the costume back on. (Desktop only; the terminal crab stays classic.)
