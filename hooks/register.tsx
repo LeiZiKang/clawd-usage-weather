@@ -43,6 +43,8 @@ const gaugeSvg = (rate: number | null) => {
 }
 const fmtRate = (rate: number | null) => (rate === null ? '—' : `${(rate / PACE).toFixed(1)}× pace`)
 
+// which pet: /weather bunny | clawd, remembered across sessions in $.store
+const avatar = atom({ plugin: 'usage-weather', key: 'avatar' } as const, 'clawd')
 const isHidden = atom({ plugin: 'usage-weather', key: 'isHidden' } as const, false)
 
 // Clawd, as Claude Code's welcome screen draws it, in four rows so it can hop
@@ -116,6 +118,43 @@ const clawdSvg = (mood: 'idle' | 'working' | 'panic', isPirate: boolean) => {
   )
 }
 
+// A white bunny with a dark ear and eye patch, facing right (square pixels)
+const BUNNY_PIXELS = [
+  '...........KK.WW..',
+  '...........KK.WP..',
+  '...........KK.WP..',
+  '...........KKKWW..',
+  '..........KKKKWWW.',
+  '.........KKKKKWWWW',
+  '.........KKEEKWWWW',
+  '..WWWW...KKEEKWWWP',
+  '.WWWWWWWWWKKWWWWW.',
+  'WWKKKWWWWWWWWWWW..',
+  'WWWKKWWWWWWWWWW...',
+  'WWWWWWWWWWWWWW....',
+  '.WWW..WW....WW....',
+]
+const bunnySvg = (mood: 'idle' | 'working' | 'panic') => {
+  // panic: the white fur flushes red
+  const colors: Record<string, string> = {
+    W: mood === 'panic' ? '#ffb0a8' : '#f4f1ea', K: '#5b5b63', P: '#f2a7b3', E: '#0d0d10',
+  }
+  const body = BUNNY_PIXELS.flatMap((row, y) =>
+    [...row].map((c, x) => (colors[c] ? `<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${colors[c]}"/>` : '')),
+  ).join('') + `<rect x="11.2" y="6.2" width="0.5" height="0.5" fill="#fff"/>`
+  const motion =
+    mood === 'panic'
+      ? `<animateTransform attributeName="transform" type="translate" values="1 3;1.5 3;0.5 3;1 3" dur="0.18s" repeatCount="indefinite"/>`
+      : mood === 'working'
+        ? `<animateTransform attributeName="transform" type="translate" values="1 3;1 0.3;1 3" keyTimes="0;0.45;1" dur="0.55s" calcMode="spline" keySplines="0.2 0.7 0.4 1;0.6 0 0.8 0.3" repeatCount="indefinite"/>`
+        : `<animateTransform attributeName="transform" type="translate" values="1 3;1 3;1 0.8;1 3" keyTimes="0;0.82;0.9;1" dur="3.2s" repeatCount="indefinite"/>`
+  const sweat = mood === 'panic' ? `<g>${sweatDrop(0.2, 0)}${sweatDrop(-0.8, 0.45)}</g>` : ''
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -1 23 17" shape-rendering="crispEdges" style="background:transparent">` +
+    `<g transform="translate(1 3)">${motion}${body}</g>${sweat}</svg>`
+  )
+}
+
 const tremble = (tick: number) => GROUND.map(row => (tick % 2 === 0 ? ` ${row}` : `${row} `))
 const sweat = (tick: number) => {
   const drops = [' ', ' ', ' ', ' ']
@@ -164,9 +203,11 @@ function toSnapshot(u: { context: { percent?: number; tokens?: number; window: n
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
+    const saved = await $.store.get('avatar')
+    if (saved === 'bunny' || saved === 'clawd') await update($, avatar, () => saved)
     await $.command.register({
       name: 'weather',
-      description: 'Usage weather band in this session: /weather on | off | top | pirate | classic',
+      description: 'Usage weather band in this session: /weather on | off | top | bunny | clawd | pirate | classic',
     })
     const s = toSnapshot(await $.session.usage())
     await update($, snapshot, () => s)
@@ -184,6 +225,11 @@ export const register: Register = on => {
 
   on('command.run', { command: 'weather' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
+    if (arg === 'bunny' || arg === 'clawd') {
+      await update($, avatar, () => arg)
+      await $.store.set('avatar', arg)
+      return { text: arg === 'bunny' ? '🐰 The bunny is here (every session from now on).' : 'Clawd is back (every session from now on).' }
+    }
     if (arg === 'top') {
       const u = await $.session.usage({ breakdown: 'summary' })
       const cats = (u.context.breakdown?.categories ?? [])
@@ -290,7 +336,11 @@ export const register: Register = on => {
     return (
       <Box flexDirection="row" alignItems="center">
         {Svg ? (
+          (await read($, avatar)) === 'bunny' ? (
+          <Svg source={bunnySvg(mood)} alt="Bunny" width={62} height={46} />
+        ) : (
           <Svg source={clawdSvg(mood, !(await read($, isClassic)))} alt="Clawd" width={80} height={46} />
+        )
         ) : (
           <Box flexDirection="column">
             {crab.map((row, i) => (

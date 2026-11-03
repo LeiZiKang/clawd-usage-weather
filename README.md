@@ -51,6 +51,12 @@ A small speedometer in the band shows how fast you're burning the 5-hour window,
 
 `/weather top` opens a **Token usage** pane: what fills the context right now (system prompt, tools, MCP tools, messages…, largest first) and the tokens this session has spent by kind (cache read / cache write / output / uncached input).
 
+### Bunny 🐰
+
+`/weather bunny` swaps Clawd for a pixel bunny (white, with a dark ear and eye patch); `/weather clawd` swaps back. The choice is remembered across sessions. Desktop only.
+
+![Pixel bunny](assets/bunny.png)
+
 ### Pirate mode 🏴‍☠️
 
 Clawd wears a tricorn hat and an eye patch and carries a cutlass by default; the cutlass swings while Claude works. `/weather classic` brings back plain Clawd for that session, `/weather pirate` puts the costume back on. (Desktop only; the terminal crab stays classic.)
