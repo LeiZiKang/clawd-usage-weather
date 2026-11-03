@@ -118,30 +118,36 @@ const clawdSvg = (mood: 'idle' | 'working' | 'panic', isPirate: boolean) => {
   )
 }
 
-// A white bunny with a dark ear and eye patch, facing right (square pixels)
+// The owner's bunny, from the front: all white, dark ear rims, pink inner ears,
+// dark eyeliner around the eyes, pink nose (square pixels)
 const BUNNY_PIXELS = [
-  '...........KK.WW..',
-  '...........KK.WP..',
-  '...........KK.WP..',
-  '...........KKKWW..',
-  '..........KKKKWWW.',
-  '.........KKKKKWWWW',
-  '.........KKEEKWWWW',
-  '..WWWW...KKEEKWWWP',
-  '.WWWWWWWWWKKWWWWW.',
-  'WWKKKWWWWWWWWWWW..',
-  'WWWKKWWWWWWWWWW...',
-  'WWWWWWWWWWWWWW....',
-  '.WWW..WW....WW....',
+  'KK.............KK',
+  'KWK...........KWK',
+  'KPWK.........KWPK',
+  '.KPWK.......KWPK.',
+  '.KPPWK.....KWPPK.',
+  '..KPWK.....KWPK..',
+  '..KWWWWWWWWWWWK..',
+  '..WWWWWWWWWWWWW..',
+  '.WWWWWWWWWWWWWWW.',
+  '.WWKKWWWWWWWKKWW.',
+  '.WKEEKWWWWWKEEKW.',
+  '.WKEGKWWWWWKEGKW.',
+  '.WWKKWWWWWWWKKWW.',
+  'WWWWWWWWPWWWWWWWW',
+  'WWWWWWWPWPWWWWWWW',
+  '.WWWWWWWWWWWWWWW.',
+  '..WWWWWWWWWWWWW..',
+  '...WWW.....WWW...',
 ]
 const bunnySvg = (mood: 'idle' | 'working' | 'panic') => {
   // panic: the white fur flushes red
   const colors: Record<string, string> = {
-    W: mood === 'panic' ? '#ffb0a8' : '#f4f1ea', K: '#5b5b63', P: '#f2a7b3', E: '#0d0d10',
+    W: mood === 'panic' ? '#ffb0a8' : '#f4f1ea', K: '#36363c', P: '#f2a7b3', E: '#0d0d10', G: '#ffffff',
   }
   const body = BUNNY_PIXELS.flatMap((row, y) =>
     [...row].map((c, x) => (colors[c] ? `<rect x="${x}" y="${y}" width="1.02" height="1.02" fill="${colors[c]}"/>` : '')),
-  ).join('') + `<rect x="11.2" y="6.2" width="0.5" height="0.5" fill="#fff"/>`
+  ).join('')
   const motion =
     mood === 'panic'
       ? `<animateTransform attributeName="transform" type="translate" values="1 3;1.5 3;0.5 3;1 3" dur="0.18s" repeatCount="indefinite"/>`
@@ -150,7 +156,7 @@ const bunnySvg = (mood: 'idle' | 'working' | 'panic') => {
         : `<animateTransform attributeName="transform" type="translate" values="1 3;1 3;1 0.8;1 3" keyTimes="0;0.82;0.9;1" dur="3.2s" repeatCount="indefinite"/>`
   const sweat = mood === 'panic' ? `<g>${sweatDrop(0.2, 0)}${sweatDrop(-0.8, 0.45)}</g>` : ''
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-2 -1 23 17" shape-rendering="crispEdges" style="background:transparent">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 0 21 22" shape-rendering="crispEdges" style="background:transparent">` +
     `<g transform="translate(1 3)">${motion}${body}</g>${sweat}</svg>`
   )
 }
@@ -337,7 +343,7 @@ export const register: Register = on => {
       <Box flexDirection="row" alignItems="center">
         {Svg ? (
           (await read($, avatar)) === 'bunny' ? (
-          <Svg source={bunnySvg(mood)} alt="Bunny" width={62} height={46} />
+          <Svg source={bunnySvg(mood)} alt="Bunny" width={44} height={46} />
         ) : (
           <Svg source={clawdSvg(mood, !(await read($, isClassic)))} alt="Clawd" width={80} height={46} />
         )
