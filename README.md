@@ -16,7 +16,7 @@ In the terminal:
 - **Context weather**: ☀ Clear (<25%) · ☁ Cloudy (<50%) · ☂ Showers (<75%) · ☇ Storm (<90%) · ↯ Compact soon.
 - **Plan limits**: 5-hour and weekly usage with a colored meter (green → yellow → orange → red) and a reset countdown that ticks every minute. Shown on Pro/Max subscriptions after the first reply of a session.
 
-Works in the terminal and in the Claude Desktop Code tab. It only reads figures Claude Code already has (`$.session.usage()`); no network calls, no files read or written.
+Works in the terminal and in the Claude Desktop Code tab. No network calls. The band's figures come from Claude Code itself (`$.session.usage()`); the usage heatmap reads your local transcripts in `~/.claude/projects`, and nothing is written outside the mod's own store.
 
 ## Install
 
@@ -50,6 +50,16 @@ A small speedometer in the band shows how fast you're burning the 5-hour window,
 ![Speedometer at 0.3×, 1× and 1.7× pace](assets/gauge.png)
 
 `/weather top` opens a **Token usage** pane: what fills the context right now (system prompt, tools, MCP tools, messages…, largest first) and the tokens this session has spent by kind (cache read / cache write / output / uncached input).
+
+### Usage heatmap 🟩
+
+By default the left of the band shows how much you've used Claude each day over the last 26 weeks, one square per day (Sunday on top, today in the last column), like a contribution graph. Shading is by quartile of the days you used Claude, so one huge day doesn't wash out the rest.
+
+![Usage heatmap next to the context weather](assets/heatmap.png)
+
+A day's figure is its input + cache-write + output tokens (cache reads left out, since they dwarf everything else), summed from every transcript in `~/.claude/projects` by local date. The scan runs in the background when a session starts and every 30 minutes; meanwhile the last result is shown. In the terminal it's drawn as a grid of `■`.
+
+`/weather clawd` (or `bunny`, `photo`) puts a pet there instead; `/weather heatmap` brings the heatmap back. The choice is remembered across sessions.
 
 ### Bunny 🐰
 
@@ -110,6 +120,7 @@ All in `hooks/register.tsx`:
 | Clawd color, panic threshold | `CLAWD_ORANGE`, `PANIC_AT`, `PANIC_RED` |
 | Clawd pixel art | `CLAWD_PIXELS` (desktop), `GROUND` / `AIR` (terminal) |
 | Hop speed | the `dur` values in `clawdSvg()`, `pose()` |
+| Heatmap weeks / colors / what counts | `HEAT_WEEKS`, `HEAT_GREENS`, `SCAN` |
 
 ## Safety
 

@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { Register } from 'claude-code'
+import type { HookOf, Register } from 'claude-code'
 
-import type { Sample, Snapshot, Spend } from '../types'
+import type { Heat, Sample, Snapshot, Spend } from '../types'
 
 const snapshot = atom({ plugin: 'usage-weather', key: 'snapshot' } as const, null)
 const clockNow = atom({ plugin: 'usage-weather', key: 'now' } as const, 0)
@@ -43,8 +43,53 @@ const gaugeSvg = (rate: number | null) => {
 }
 const fmtRate = (rate: number | null) => (rate === null ? '—' : `${(rate / PACE).toFixed(1)}× pace`)
 
-// which pet: /weather bunny | clawd, remembered across sessions in $.store
-const avatar = atom({ plugin: 'usage-weather', key: 'avatar' } as const, 'clawd')
+// what sits left of the band: /weather heatmap | clawd | bunny, remembered across sessions in $.store
+const avatar = atom({ plugin: 'usage-weather', key: 'avatar' } as const, 'heatmap')
+const heat = atom({ plugin: 'usage-weather', key: 'heat' } as const, null)
+
+// Usage heatmap: tokens per day (input + cache write + output, not cache reads),
+// summed over every transcript in ~/.claude/projects. A message's usage repeats on
+// each of its content blocks, so each message id counts once. First line: today.
+const SCAN = String.raw`date +%F
+find "$HOME/.claude/projects" -name '*.jsonl' -exec grep -h '"output_tokens"' {} + | perl -MTime::Local -MPOSIX=strftime -ne '
+  next unless /"id":"(msg_[^"]+)"/; next if $seen{$1}++;
+  my ($y, $mo, $d, $hh) = /"timestamp":"(\d{4})-(\d\d)-(\d\d)T(\d\d)/ or next;
+  my $n = 0; $n += $1 while /"(?:input_tokens|cache_creation_input_tokens|output_tokens)":(\d+)/g;
+  $days{strftime("%F", localtime timegm(0, 0, $hh, $d, $mo - 1, $y))} += $n;
+  END { print "$_ $days{$_}\n" for sort keys %days }'`
+
+const scanUsage = async ($: Parameters<HookOf<'session.start'>>[0]) => {
+  const { stdout } = await $.process.run(['/bin/sh', '-c', SCAN], { timeoutMs: 120_000 })
+  const [today, ...rows] = stdout.trim().split('\n')
+  if (!today || !/^\d{4}-\d\d-\d\d$/.test(today)) return
+  const h: Heat = { today, days: Object.fromEntries(rows.map(r => r.split(' ')).map(([d, n]) => [d!, Number(n)])) }
+  await update($, heat, () => h)
+  await $.store.set('heat', h)
+}
+
+const HEAT_WEEKS = 26
+const HEAT_EMPTY = 'rgba(139,148,158,0.16)'
+const HEAT_GREENS = ['#0e4429', '#006d32', '#26a641', '#39d353']
+// one cell per day, Sunday on top, today in the last column
+const heatCells = (h: Heat) => {
+  const [y, m, d] = h.today.split('-').map(Number) as [number, number, number]
+  const todayMs = Date.UTC(y, m - 1, d)
+  const start = todayMs - (new Date(todayMs).getUTCDay() + 7 * (HEAT_WEEKS - 1)) * 86_400_000
+  // shade by quartile of the days that had any use, so one huge day doesn't wash out the rest
+  const used = Object.values(h.days).filter(n => n > 0).sort((a, b) => a - b)
+  const q = [0.25, 0.5, 0.75].map(f => used[Math.floor(f * (used.length - 1))] ?? 0)
+  const cells: { col: number; row: number; color: string }[] = []
+  for (let i = 0; start + i * 86_400_000 <= todayMs; i++) {
+    const n = h.days[new Date(start + i * 86_400_000).toISOString().slice(0, 10)] ?? 0
+    const color = n <= 0 ? HEAT_EMPTY : HEAT_GREENS[q.filter(t => n > t).length]!
+    cells.push({ col: Math.floor(i / 7), row: i % 7, color })
+  }
+  return cells
+}
+const heatSvg = (h: Heat) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${HEAT_WEEKS * 13 - 3} 88" style="background:transparent">` +
+  heatCells(h).map(c => `<rect x="${c.col * 13}" y="${c.row * 13}" width="10" height="10" rx="2" fill="${c.color}"/>`).join('') +
+  `</svg>`
 // your own pet: a cut-out PNG on your disk (/weather photo <path>), kept as base64
 const petImage = atom({ plugin: 'usage-weather', key: 'petImage' } as const, '')
 const isHidden = atom({ plugin: 'usage-weather', key: 'isHidden' } as const, false)
@@ -230,7 +275,14 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
     const saved = await $.store.get('avatar')
-    if (saved === 'bunny' || saved === 'clawd' || saved === 'photo') await update($, avatar, () => saved)
+    if (saved === 'heatmap' || saved === 'bunny' || saved === 'clawd' || saved === 'photo') await update($, avatar, () => saved)
+    // last scan's heatmap right away, then a fresh scan in the background and every 30 minutes
+    const cached = (await $.store.get('heat')) as Heat | undefined
+    if (cached?.today) await update($, heat, () => cached)
+    void scanUsage($).catch(() => {})
+    $.clock.every(30 * 60_000, () => {
+      void scanUsage($).catch(() => {})
+    })
     const petPath = await $.store.get('petPath')
     if (typeof petPath === 'string') {
       try {
@@ -242,7 +294,7 @@ export const register: Register = on => {
     }
     await $.command.register({
       name: 'weather',
-      description: 'Usage weather band in this session: /weather on | off | top | photo <png> | bunny | clawd | pirate | classic',
+      description: 'Usage weather band in this session: /weather on | off | top | heatmap | photo <png> | bunny | clawd | pirate | classic',
     })
     const s = toSnapshot(await $.session.usage())
     await update($, snapshot, () => s)
@@ -276,6 +328,11 @@ export const register: Register = on => {
       await update($, avatar, () => 'photo')
       await $.store.set('avatar', 'photo')
       return { text: '🐾 Your pet is here (every session from now on).' }
+    }
+    if (arg === 'heatmap') {
+      await update($, avatar, () => 'heatmap')
+      await $.store.set('avatar', 'heatmap')
+      return { text: 'Usage heatmap is back (every session from now on).' }
     }
     if (arg === 'bunny' || arg === 'clawd') {
       await update($, avatar, () => arg)
@@ -384,10 +441,25 @@ export const register: Register = on => {
     const crab = isPanicking ? tremble(tick) : pose(tick, e.props.isWorking)
     const drops = isPanicking ? sweat(tick) : null
     const mood = isPanicking ? 'panic' : e.props.isWorking ? 'working' : 'idle'
+    const h = (await read($, avatar)) === 'heatmap' ? await read($, heat) : null
 
     return (
       <Box flexDirection="row" alignItems="center">
-        {Svg ? (
+        {h ? (
+          Svg ? (
+            <Svg source={heatSvg(h)} alt="Claude usage, last 26 weeks" width={Math.round((46 * (HEAT_WEEKS * 13 - 3)) / 88)} height={46} />
+          ) : (
+            <Box flexDirection="column">
+              {[0, 1, 2, 3, 4, 5, 6].map(row => (
+                <Text key={String(row)}>
+                  {heatCells(h).filter(c => c.row === row).map(c => (
+                    <Text key={String(c.col)} color={c.color === HEAT_EMPTY ? '#30363d' : c.color}>■</Text>
+                  ))}
+                </Text>
+              ))}
+            </Box>
+          )
+        ) : Svg ? (
           (await read($, avatar)) === 'photo' && (await read($, petImage)) ? (
           <Svg source={photoSvg(mood, await read($, petImage))} alt="Pet" width={40} height={46} />
         ) : (await read($, avatar)) === 'bunny' ? (
@@ -402,7 +474,7 @@ export const register: Register = on => {
             ))}
           </Box>
         )}
-        {!Svg && drops && (
+        {!h && !Svg && drops && (
           <Box flexDirection="column">
             {drops.map((d, i) => (
               <Text key={String(i)} color={SWEAT_BLUE}>{d}</Text>
